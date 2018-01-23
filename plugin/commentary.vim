@@ -32,29 +32,43 @@ function! s:go(type,...) abort
   endif
 
   let [l, r] = s:surroundings()
-  let uncomment = 2
+  if l[-1:] == ' '
+    let lCode = l[:-2] . "~ "
+  else
+    let lCode = l . "~"
+  endif
   for lnum in range(lnum1,lnum2)
+    let uncomment = 2
+    let leaveAlone = 0
     let line = matchstr(getline(lnum),'\S.*\s\@<!')
     let [l, r] = s:strip_white_space(l,r,line)
-    if line != '' && (stridx(line,l) || line[strlen(line)-strlen(r) : -1] != r)
+    let [lCode, r] = s:strip_white_space(lCode,r,line)
+    if line != '' && line[:len(lCode)-1] == lCode
+      " Inside a code commentary
+      let uncomment = 2
+    elseif line != '' && line[:len(l)-1] == l
+      " Inside a "true" comment
+      let leaveAlone = 1
+    else
       let uncomment = 0
+    endif
+
+    if !leaveAlone
+      let line = getline(lnum)
+      if strlen(r) > 2 && l.r !~# '\\'
+        let line = substitute(line,
+              \'\M'.r[0:-2].'\zs\d\*\ze'.r[-1:-1].'\|'.l[0].'\zs\d\*\ze'.l[1:-1],
+              \'\=substitute(submatch(0)+1-uncomment,"^0$\\|^-\\d*$","","")','g')
+      endif
+      if uncomment
+        let line = substitute(line,'\S.*\s\@<!','\=submatch(0)[strlen(lCode):-strlen(r)-1]','')
+      else
+        let line = substitute(line,'^\%('.matchstr(getline(lnum1),'^\s*').'\|\s*\)\zs.*\S\@<=','\=lCode.submatch(0).r','')
+      endif
+      call setline(lnum,line)
     endif
   endfor
 
-  for lnum in range(lnum1,lnum2)
-    let line = getline(lnum)
-    if strlen(r) > 2 && l.r !~# '\\'
-      let line = substitute(line,
-            \'\M'.r[0:-2].'\zs\d\*\ze'.r[-1:-1].'\|'.l[0].'\zs\d\*\ze'.l[1:-1],
-            \'\=substitute(submatch(0)+1-uncomment,"^0$\\|^-\\d*$","","")','g')
-    endif
-    if uncomment
-      let line = substitute(line,'\S.*\s\@<!','\=submatch(0)[strlen(l):-strlen(r)-1]','')
-    else
-      let line = substitute(line,'^\%('.matchstr(getline(lnum1),'^\s*').'\|\s*\)\zs.*\S\@<=','\=l.submatch(0).r','')
-    endif
-    call setline(lnum,line)
-  endfor
   let modelines = &modelines
   try
     set modelines=0
